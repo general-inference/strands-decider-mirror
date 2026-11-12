@@ -146,6 +146,13 @@ class TrainConfig:
     # without replaying data; only the tail of the current epoch's batches is
     # iterated, and the EMA is restored.
     resume_from: int = 0
+    # Cache the frozen-KL reference logits to this path: load and skip the
+    # (multi-hour) precompute when the file exists, compute-and-save when it
+    # does not. The cache is valid ONLY for identical train_files, seed,
+    # max_length, micro_batch_size, grad_accum and kl_frozen_reference — the
+    # precompute iterates the sampler's deterministic batch order, a function
+    # of exactly those. A config change must use a different path.
+    frozen_kl_cache: str = ""
     seed: int = 0
     log_every: int = 20
     eval_every: int = 500
@@ -647,9 +654,17 @@ def train(cfg: TrainConfig) -> str:
             f"[strands-decider] frozen-KL reference: {cfg.kl_frozen_reference}"
             + ("" if own else " (its own tokenizer, not the student's)")
         )
-        refs = _frozen_reference(
-            model, train_examples, run[: total_steps * cfg.grad_accum], coll_cfg, device, ref_model
-        )
+        if cfg.frozen_kl_cache and os.path.exists(cfg.frozen_kl_cache):
+            refs = torch.load(cfg.frozen_kl_cache, map_location=device, weights_only=True)
+            print(f"[strands-decider] frozen-KL reference loaded from {cfg.frozen_kl_cache}")
+        else:
+            refs = _frozen_reference(
+                model, train_examples, run[: total_steps * cfg.grad_accum], coll_cfg, device, ref_model
+            )
+            if cfg.frozen_kl_cache:
+                os.makedirs(os.path.dirname(cfg.frozen_kl_cache) or ".", exist_ok=True)
+                torch.save(refs, cfg.frozen_kl_cache)
+                print(f"[strands-decider] frozen-KL reference cached to {cfg.frozen_kl_cache}")
         del ref_model
         if device == "cuda":
             torch.cuda.empty_cache()
