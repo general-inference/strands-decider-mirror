@@ -68,6 +68,10 @@ class TrainConfig:
     # (modeling.HostEmbedding). For one GPU: under torchrun every rank would hold a copy.
     host_embeddings: bool = False
     freeze_torso: bool = False
+    # With freeze_torso, also keep the LoRA adapters trainable (the hybrid
+    # A3 mode: frozen torso weights + trainable adapter + head). freeze_torso
+    # alone trains the head only, adapters included in the freeze.
+    freeze_torso_keep_lora: bool = False
     pointer_dim: int = 256
     # A frozen teacher's option distribution per training row (data/teacher.py): JSONL of
     # {"i": row index in the concatenated train_files, "probs": [...canonical order]}.
@@ -265,6 +269,13 @@ def _init_from(cfg: TrainConfig) -> StrandsDeciderModel:
     )
     if cfg.freeze_torso:
         model.freeze_torso()
+        if cfg.freeze_torso_keep_lora:
+            n = 0
+            for name, p in model.named_parameters():
+                if ".lora_A." in name or ".lora_B." in name:
+                    p.requires_grad_(True)
+                    n += p.numel()
+            print(f"[strands-decider] freeze_torso_keep_lora: {n:,} adapter params trainable")
     return model
 
 
