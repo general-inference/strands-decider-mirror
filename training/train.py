@@ -660,7 +660,6 @@ def train(cfg: TrainConfig) -> str:
 
     ema = _Ema(model, cfg.ema_decay) if cfg.ema_decay > 0 else None
     if cfg.resume_from and ema is not None:
-        import os
         ema_path = os.path.join(cfg.output_dir, "ema.pt")
         if os.path.exists(ema_path):
             ema.load_state_dict(torch.load(ema_path, map_location="cpu"))
