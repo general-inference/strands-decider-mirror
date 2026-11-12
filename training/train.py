@@ -140,6 +140,12 @@ class TrainConfig:
 
     # bookkeeping
     output_dir: str = "checkpoints/hobson-1.7b"
+    # Resume from an existing checkpoint in output_dir (a save_every or final
+    # save). The optimizer and scheduler are rebuilt and fast-forwarded through
+    # the saved steps, so the LR schedule is identical to an uninterrupted run
+    # without replaying data; only the tail of the current epoch's batches is
+    # iterated, and the EMA is restored.
+    resume_from: int = 0
     seed: int = 0
     log_every: int = 20
     eval_every: int = 500
@@ -319,6 +325,15 @@ class _Ema:
         self.live = [p.detach().clone() for p in self.params]
         for a, p in zip(self.avg, self.params, strict=True):
             p.copy_(a)
+
+    def state_dict(self) -> dict:
+        return {"avg": [a.clone() for a in self.avg]}
+
+    def load_state_dict(self, state: dict) -> None:
+        # The update warm-up coefficient is a pure function of the step index,
+        # which the loop already resumes to; only the averages need restoring.
+        for a, b in zip(self.avg, state["avg"], strict=True):
+            a.copy_(b)
 
     @torch.no_grad()  # type: ignore[untyped-decorator]
     def restore(self) -> None:
@@ -644,9 +659,25 @@ def train(cfg: TrainConfig) -> str:
         )
 
     ema = _Ema(model, cfg.ema_decay) if cfg.ema_decay > 0 else None
+    if cfg.resume_from and ema is not None:
+        import os
+        ema_path = os.path.join(cfg.output_dir, "ema.pt")
+        if os.path.exists(ema_path):
+            ema.load_state_dict(torch.load(ema_path, map_location="cpu"))
+            print("[strands-decider] EMA state restored")
     print(f"[strands-decider] {total_steps} optimizer steps (warmup {warmup})")
     model.train()
     step, micro, running, t0 = 0, 0, 0.0, time.time()
+    resume = cfg.resume_from if cfg.resume_from and cfg.resume_from < total_steps else 0
+    if resume:
+        # Fast-forward the scheduler through the saved steps; the schedule is a
+        # function of step index, so this reproduces the LR the interrupted run
+        # would have had, without replaying data.
+        for _ in range(resume):
+            sched.step()
+        step = resume
+        micro = resume * cfg.grad_accum
+        print(f"[strands-decider] resuming from step {resume}/{total_steps}")
     running_kl = 0.0
     running_tkl = 0.0
     history: list[dict[str, float]] = []
@@ -655,7 +686,21 @@ def train(cfg: TrainConfig) -> str:
     for epoch in range(cfg.epochs):
         if done:
             break
-        for batch in train_loader:
+        if cfg.group_by_length and epoch < (step * cfg.grad_accum) // len(sampler):
+            # A completed epoch: no micro-batches of it remain to train.
+            continue
+        loader = train_loader
+        if cfg.group_by_length and resume and epoch == (step * cfg.grad_accum) // len(sampler):
+            # Tail of the resume epoch: same deterministic batch order, minus
+            # the micro-batches the interrupted run already completed.
+            tail = sampler.batches(epoch)[micro % len(sampler) :]
+            loader = DataLoader(
+                ExampleDataset(train_examples),
+                batch_sampler=tail,
+                collate_fn=train_collate,
+                num_workers=0,
+            )
+        for batch in loader:
             # Under torchrun a forward is this rank's slice of a micro-batch (distributed.py).
             part = batch.pop("part", distributed.WHOLE)
             batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
@@ -761,6 +806,7 @@ def train(cfg: TrainConfig) -> str:
                 model.save_pretrained(cfg.output_dir)
                 if ema is not None:
                     ema.restore()
+                    torch.save(ema.state_dict(), os.path.join(cfg.output_dir, "ema.pt"))
 
             if step >= total_steps:
                 done = True
@@ -775,6 +821,8 @@ def train(cfg: TrainConfig) -> str:
     history.append({"step": step, **metrics})
 
     model.save_pretrained(cfg.output_dir)
+    if ema is not None:
+        torch.save(ema.state_dict(), os.path.join(cfg.output_dir, "ema.pt"))
     with open(os.path.join(cfg.output_dir, "history.json"), "w", encoding="utf-8") as fh:
         json.dump(history, fh, indent=2)
     print(f"[strands-decider] saved to {cfg.output_dir}")
