@@ -153,6 +153,10 @@ class TrainConfig:
     # precompute iterates the sampler's deterministic batch order, a function
     # of exactly those. A config change must use a different path.
     frozen_kl_cache: str = ""
+    # Compute (or load) the frozen-KL reference cache, save it, and exit
+    # without training — decouples the multi-hour precompute from the
+    # serial training chain (run it as a parallel job ahead of time).
+    frozen_kl_precompute_only: bool = False
     seed: int = 0
     log_every: int = 20
     eval_every: int = 500
@@ -672,6 +676,9 @@ def train(cfg: TrainConfig) -> str:
             f"[strands-decider] frozen-KL reference for {refs.shape[0]:,} micro-batches "
             f"in {time.time() - t_ref:.0f} s"
         )
+        if cfg.frozen_kl_precompute_only:
+            print("[strands-decider] frozen_kl_precompute_only: done, exiting before training")
+            raise SystemExit(0)
 
     ema = _Ema(model, cfg.ema_decay) if cfg.ema_decay > 0 else None
     if cfg.resume_from and ema is not None:
