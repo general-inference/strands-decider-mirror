@@ -360,14 +360,19 @@ class StrandsDeciderModel(nn.Module):
         if attn_implementation:
             kwargs["attn_implementation"] = attn_implementation
         base_cfg = AutoConfig.from_pretrained(config.base_model, revision=config.base_revision)
-        if base_cfg.model_type in {"qwen3_5", "qwen3_5_text"}:
-            # Qwen3.5 checkpoints are multimodal; AutoModel would hand back the wrapper with
-            # a vision tower. Load the text tower through its causal-LM class, which maps the
+        if base_cfg.model_type in {"qwen3_5", "qwen3_5_text", "qwen3_5_moe"}:
+            # Qwen3.5 checkpoints are multimodal (35B-A3B is the MoE variant,
+            # qwen3_5_moe); AutoModel would hand back the wrapper with a vision tower. Load the text tower through its causal-LM class, which maps the
             # checkpoint's weight names, and keep only the decoder (the output head is tied to
             # the input embeddings, which the KL reference reads instead).
             import transformers
 
-            lm = transformers.Qwen3_5ForCausalLM.from_pretrained(
+            lm_cls = (
+                transformers.Qwen3_5MoeForCausalLM
+                if base_cfg.model_type == "qwen3_5_moe"
+                else transformers.Qwen3_5ForCausalLM
+            )
+            lm = lm_cls.from_pretrained(
                 config.base_model, config=base_cfg.get_text_config(), **kwargs
             )
             torso = lm.model
