@@ -527,6 +527,20 @@ def train(cfg: TrainConfig) -> str:
         )
         if cfg.freeze_torso:
             model.freeze_torso()
+            if cfg.freeze_torso_keep_lora:
+                # Re-enable the adapter so the frozen-torso path still trains LoRA
+                # (the A3 hybrid: frozen torso weights + trainable adapter + head).
+                n = 0
+                for name, p in model.named_parameters():
+                    if ".lora_A." in name or ".lora_B." in name:
+                        p.requires_grad_(True)
+                        n += p.numel()
+                if n == 0:
+                    raise ValueError(
+                        "freeze_torso_keep_lora is True but no LoRA adapters are "
+                        "present (use_lora must be True with freeze_torso_keep_lora)"
+                    )
+                print(f"[strands-decider] freeze_torso_keep_lora: {n:,} adapter params trainable")
     # Checkpointing needs a grad-requiring input; a frozen torso has none, and it
     # buys nothing anyway since no backward pass traverses it.
     if cfg.gradient_checkpointing and (not cfg.freeze_torso or cfg.freeze_torso_keep_lora):
