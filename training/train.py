@@ -508,7 +508,9 @@ def train(cfg: TrainConfig) -> str:
             base_model=cfg.base_model,
             head_dropout=cfg.head_dropout,
             max_length=cfg.max_length,
-            use_lora=cfg.use_lora and not cfg.freeze_torso,
+            # freeze_torso alone is head-only; keep_lora attaches adapters and
+            # trains them over the frozen base weights (the A3 hybrid mode).
+            use_lora=cfg.use_lora and (not cfg.freeze_torso or cfg.freeze_torso_keep_lora),
             lora_r=cfg.lora_r,
             lora_alpha=cfg.lora_alpha,
             force_bos=cfg.force_bos,
@@ -527,7 +529,7 @@ def train(cfg: TrainConfig) -> str:
             model.freeze_torso()
     # Checkpointing needs a grad-requiring input; a frozen torso has none, and it
     # buys nothing anyway since no backward pass traverses it.
-    if cfg.gradient_checkpointing and not cfg.freeze_torso:
+    if cfg.gradient_checkpointing and (not cfg.freeze_torso or cfg.freeze_torso_keep_lora):
         base = getattr(model.torso, "base_model", model.torso)
         inner = getattr(base, "model", base)
         if hasattr(inner, "gradient_checkpointing_enable"):
