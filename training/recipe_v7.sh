@@ -25,7 +25,8 @@ CKPT="checkpoints/hobson-1.7b-recipe"
 
 # PY is the interpreter (recipe.sh sets it); the default is the active environment's python.
 PY="${PY:-python}"
-export PYTHONUNBUFFERED=1 HF_HUB_DISABLE_SYMLINKS_WARNING=1 HF_HUB_DISABLE_PROGRESS_BARS=1
+export PYTHONUNBUFFERED=1 HF_HUB_DISABLE_SYMLINKS_WARNING=1
+unset HF_HUB_DISABLE_PROGRESS_BARS
 # Training/eval/calibrate/data commands moved out of the strands-decider CLI (inference
 # only). Call them with the Python interpreter as `python -m training.<module>`.
 

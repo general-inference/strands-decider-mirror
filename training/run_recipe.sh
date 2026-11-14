@@ -28,7 +28,8 @@ set -euo pipefail
 : "${PY:?set PY to the venv python}"
 : "${S3_PREFIX:?set S3_PREFIX (s3://bucket/prefix, or none)}"
 [ -f training/recipe.sh ] && [ -d src/strands_decider ] || { echo "run from the repo root" >&2; exit 2; }
-export PY PYTHONUNBUFFERED=1 HF_HUB_DISABLE_PROGRESS_BARS=1 HF_DATASETS_DISABLE_PROGRESS_BARS=1
+export PY PYTHONUNBUFFERED=1
+unset HF_HUB_DISABLE_PROGRESS_BARS HF_DATASETS_DISABLE_PROGRESS_BARS
 export TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 RUN_DIR="${RUN_DIR:-$PWD/runs/recipe}"
 mkdir -p "$RUN_DIR/logs" data checkpoints reports

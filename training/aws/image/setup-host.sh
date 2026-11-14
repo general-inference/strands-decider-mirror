@@ -131,7 +131,7 @@ uv pip install -q --python $PY -c $H/constraints.txt \
 
 step "code ($CODE_NAME) + pip install -e .[dev,train]"
 /usr/local/bin/hobson-pull "$CODE_NAME"
-uv pip install -q --python $PY -c $H/constraints.txt -e "$H/code/${CODE_NAME}[dev,train]"
+uv pip install --python $PY -c $H/constraints.txt -e "$H/code/${CODE_NAME}[dev,train]"
 
 step "pre-download models into HF_HOME"
 # torso (configs/train*.yaml base_model) at main; teacher at the revision pinned in
@@ -139,9 +139,9 @@ step "pre-download models into HF_HOME"
 TEACHER_REV=$(grep -oE '"--revision", default="[0-9a-f]{40}"' "$H/code/$CODE_NAME/training/data/teacher.py" | grep -oE '[0-9a-f]{40}') \
   || { echo "ERROR: no pinned --revision default in training/data/teacher.py" >&2; exit 1; }
 # Not `download && echo`: set -e does not stop at a failed command before `&&`.
-$H/venv/bin/hf download Qwen/Qwen3.5-2B-Base --quiet >/dev/null
+$H/venv/bin/hf download Qwen/Qwen3.5-2B-Base
 echo "downloaded Qwen/Qwen3.5-2B-Base@main"
-$H/venv/bin/hf download Qwen/Qwen3.5-4B --revision "$TEACHER_REV" --quiet >/dev/null
+$H/venv/bin/hf download Qwen/Qwen3.5-4B --revision "$TEACHER_REV"
 echo "downloaded Qwen/Qwen3.5-4B@$TEACHER_REV"
 ls $HF_HOME/hub/models--Qwen--Qwen3.5-4B/snapshots/ $HF_HOME/hub/models--Qwen--Qwen3.5-2B-Base/snapshots/
 du -sh $HF_HOME/hub/* 2>/dev/null || true

@@ -49,7 +49,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."  # every path below is relative to the repo root
 CKPT="${CKPT:-checkpoints/hobson-2b-recipe}"
 export PY="${PY:-python}"  # the active environment; the AWS runner sets PY explicitly
-export PYTHONUNBUFFERED=1 HF_HUB_DISABLE_PROGRESS_BARS=1
+export PYTHONUNBUFFERED=1
+unset HF_HUB_DISABLE_PROGRESS_BARS
 NGPU="${NGPU:-1}"
 PARENT_CONFIG="${PARENT_CONFIG:-configs/train-parent.yaml}"
 TRAIN_CONFIG="${TRAIN_CONFIG:-configs/train.yaml}"
